@@ -19,6 +19,10 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.search_frame = ctk.CTkFrame(self)
         self.search_frame.pack(pady=10, padx=20, fill="x")
 
+        self.source_var = ctk.StringVar(value="The Pirate Bay")
+        self.source_dropdown = ctk.CTkOptionMenu(self.search_frame, variable=self.source_var, values=["The Pirate Bay", "Nyaa.si"], width=140, height=35)
+        self.source_dropdown.pack(side="left", padx=(10, 0), pady=10)
+
         self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Enter movie name to search...", height=35)
         self.search_entry.pack(side="left", expand=True, fill="x", padx=(10, 10), pady=10)
 
@@ -58,12 +62,16 @@ class SafeMovieDownloaderApp(ctk.CTk):
             self.status_label.configure(text="Please enter a movie name.", text_color="red")
             return
 
-        self.status_label.configure(text=f"Searching for '{keyword}'...", text_color="white")
+        source = self.source_var.get()
+        self.status_label.configure(text=f"Searching for '{keyword}' on {source}...", text_color="white")
         self.search_button.configure(state="disabled")
         self.download_button.configure(state="disabled")
-        self.log(f"\n--- Searching for: {keyword} ---")
+        self.log(f"\n--- Searching for: {keyword} on {source} ---")
 
-        results = TorrentAPI.search_movie(keyword)
+        if source == "The Pirate Bay":
+            results = TorrentAPI.search_movie(keyword)
+        else:
+            results = TorrentAPI.search_nyaa(keyword)
         if not results:
             self.status_label.configure(text="Movie not found.", text_color="red")
             self.search_button.configure(state="normal")
@@ -102,7 +110,10 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.download_button.configure(state="disabled")
         self.search_button.configure(state="disabled")
         
-        magnet_link = TorrentAPI.generate_magnet_link(torrent_info["info_hash"], torrent_info["name"])
+        if "magnet" in torrent_info:
+            magnet_link = torrent_info["magnet"]
+        else:
+            magnet_link = TorrentAPI.generate_magnet_link(torrent_info["info_hash"], torrent_info["name"])
         
         self.status_label.configure(text="Starting download...", text_color="green")
         self.progress_bar.set(0)
