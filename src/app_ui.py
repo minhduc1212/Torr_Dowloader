@@ -10,6 +10,7 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.geometry("650x550")
 
         self.download_manager = DownloadManager("./Filtered_Movies")
+        self.current_results = []
 
         # UI Elements Configuration
         self.label = ctk.CTkLabel(self, text="Safe Movie Downloader Tool", font=ctk.CTkFont(size=22, weight="bold"))
@@ -21,8 +22,18 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Enter movie name to search...", height=35)
         self.search_entry.pack(side="left", expand=True, fill="x", padx=(10, 10), pady=10)
 
-        self.search_button = ctk.CTkButton(self.search_frame, text="Search & Download", command=self.on_search, height=35)
+        self.search_button = ctk.CTkButton(self.search_frame, text="Search", command=self.on_search, height=35)
         self.search_button.pack(side="right", padx=(0, 10), pady=10)
+
+        self.results_frame = ctk.CTkFrame(self)
+        self.results_frame.pack(pady=5, padx=20, fill="x")
+
+        self.result_var = ctk.StringVar(value="")
+        self.result_dropdown = ctk.CTkOptionMenu(self.results_frame, variable=self.result_var, values=[], dynamic_resizing=False)
+        self.result_dropdown.pack(side="left", expand=True, fill="x", padx=(10, 10), pady=10)
+
+        self.download_button = ctk.CTkButton(self.results_frame, text="Download Selected", command=self.on_download_selected, state="disabled")
+        self.download_button.pack(side="right", padx=(0, 10), pady=10)
 
         self.status_label = ctk.CTkLabel(self, text="Ready", text_color="gray")
         self.status_label.pack(pady=5)
@@ -49,16 +60,47 @@ class SafeMovieDownloaderApp(ctk.CTk):
 
         self.status_label.configure(text=f"Searching for '{keyword}'...", text_color="white")
         self.search_button.configure(state="disabled")
+        self.download_button.configure(state="disabled")
         self.log(f"\n--- Searching for: {keyword} ---")
 
         results = TorrentAPI.search_movie(keyword)
         if not results:
             self.status_label.configure(text="Movie not found.", text_color="red")
             self.search_button.configure(state="normal")
+            self.result_dropdown.configure(values=[])
+            self.result_var.set("")
             return
 
-        torrent_info = results[0]
-        self.log(f"Found: {torrent_info['name']}")
+        self.current_results = results
+        
+        display_values = []
+        for idx, res in enumerate(results):
+            display_values.append(f"[{idx+1}] {res.get('name', 'Unknown')}")
+            
+        self.result_dropdown.configure(values=display_values)
+        self.result_var.set(display_values[0])
+        self.download_button.configure(state="normal")
+        self.search_button.configure(state="normal")
+        
+        self.status_label.configure(text=f"Found {len(results)} results. Select one and click Download.", text_color="white")
+        self.log(f"Found {len(results)} results for '{keyword}'.")
+
+    def on_download_selected(self):
+        selection = self.result_var.get()
+        if not selection:
+            return
+            
+        try:
+            idx_str = selection.split("]")[0].strip("[")
+            idx = int(idx_str) - 1
+            torrent_info = self.current_results[idx]
+        except (IndexError, ValueError):
+            self.log("Error extracting selected torrent.")
+            return
+
+        self.log(f"Selected: {torrent_info['name']}")
+        self.download_button.configure(state="disabled")
+        self.search_button.configure(state="disabled")
         
         magnet_link = TorrentAPI.generate_magnet_link(torrent_info["info_hash"], torrent_info["name"])
         
@@ -98,6 +140,7 @@ class SafeMovieDownloaderApp(ctk.CTk):
         
         self.status_label.configure(text="Enjoy your safe movie watching!", text_color="green")
         self.search_button.configure(state="normal")
+        self.download_button.configure(state="normal")
 
     def destroy(self):
         # Make sure aria2 terminates cleanly when window closes
