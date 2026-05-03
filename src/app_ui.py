@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from tkinter import ttk
 from src.torrent_api import TorrentAPI
 from src.file_manager import FileManager
 from src.download_manager import DownloadManager
@@ -7,7 +8,7 @@ class SafeMovieDownloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Safe Movie Downloader")
-        self.geometry("650x550")
+        self.geometry("850x650")
 
         self.download_manager = DownloadManager("./Filtered_Movies")
         self.current_results = []
@@ -29,15 +30,29 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.search_button = ctk.CTkButton(self.search_frame, text="Search", command=self.on_search, height=35)
         self.search_button.pack(side="right", padx=(0, 10), pady=10)
 
+        # Results Table
         self.results_frame = ctk.CTkFrame(self)
-        self.results_frame.pack(pady=5, padx=20, fill="x")
+        self.results_frame.pack(pady=5, padx=20, fill="both", expand=True)
 
-        self.result_var = ctk.StringVar(value="")
-        self.result_dropdown = ctk.CTkOptionMenu(self.results_frame, variable=self.result_var, values=[], dynamic_resizing=False)
-        self.result_dropdown.pack(side="left", expand=True, fill="x", padx=(10, 10), pady=10)
+        self.tree = ttk.Treeview(self.results_frame, columns=("Name", "Seeders", "Leechers", "Size"), show="headings")
+        self.tree.heading("Name", text="Name")
+        self.tree.heading("Seeders", text="Seeders")
+        self.tree.heading("Leechers", text="Leechers")
+        self.tree.heading("Size", text="Size")
+        
+        self.tree.column("Name", width=450)
+        self.tree.column("Seeders", width=70, anchor="center")
+        self.tree.column("Leechers", width=70, anchor="center")
+        self.tree.column("Size", width=100, anchor="center")
+        
+        self.tree.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        
+        self.scrollbar = ttk.Scrollbar(self.results_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.scrollbar.set)
+        self.scrollbar.pack(side="right", fill="y", pady=10, padx=(0, 10))
 
-        self.download_button = ctk.CTkButton(self.results_frame, text="Download Selected", command=self.on_download_selected, state="disabled")
-        self.download_button.pack(side="right", padx=(0, 10), pady=10)
+        self.download_button = ctk.CTkButton(self, text="Download Selected", command=self.on_download_selected, state="disabled")
+        self.download_button.pack(pady=10)
 
         self.status_label = ctk.CTkLabel(self, text="Ready", text_color="gray")
         self.status_label.pack(pady=5)
@@ -46,8 +61,27 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.progress_bar.pack(pady=10, padx=20, fill="x")
         self.progress_bar.set(0)
 
-        self.log_textbox = ctk.CTkTextbox(self, state="disabled", height=200)
+        self.log_textbox = ctk.CTkTextbox(self, state="disabled", height=150)
         self.log_textbox.pack(pady=10, padx=20, fill="both", expand=True)
+
+        self.setup_tree_styles()
+
+    def setup_tree_styles(self):
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure("Treeview", 
+                        background="#2b2b2b", 
+                        foreground="white", 
+                        rowheight=25, 
+                        fieldbackground="#2b2b2b",
+                        bordercolor="#2b2b2b",
+                        borderwidth=0)
+        style.map("Treeview", background=[('selected', '#1f538d')])
+        style.configure("Treeview.Heading", 
+                        background="#333333", 
+                        foreground="white", 
+                        relief="flat")
+        style.map("Treeview.Heading", background=[('active', '#444444')])
 
     def log(self, message):
         """Appends a message to the UI log output box."""
@@ -68,25 +102,36 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.download_button.configure(state="disabled")
         self.log(f"\n--- Searching for: {keyword} on {source} ---")
 
+        # Clear existing results
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
         if source == "The Pirate Bay":
             results = TorrentAPI.search_movie(keyword)
         else:
             results = TorrentAPI.search_nyaa(keyword)
+            
         if not results:
             self.status_label.configure(text="Movie not found.", text_color="red")
             self.search_button.configure(state="normal")
-            self.result_dropdown.configure(values=[])
-            self.result_var.set("")
             return
 
         self.current_results = results
         
-        display_values = []
         for idx, res in enumerate(results):
-            display_values.append(f"[{idx+1}] {res.get('name', 'Unknown')}")
+            name = res.get('name', 'Unknown')
+            seeders = res.get('seeders', 'N/A')
+            leechers = res.get('leechers', 'N/A')
+            size = res.get('size', 'N/A')
+            if size != 'N/A':
+                try:
+                    size_gb = float(size) / (1024**3)
+                    size = f"{size_gb:.2f} GB"
+                except:
+                    pass
             
-        self.result_dropdown.configure(values=display_values)
-        self.result_var.set(display_values[0])
+            self.tree.insert("", "end", iid=idx, values=(name, seeders, leechers, size))
+            
         self.download_button.configure(state="normal")
         self.search_button.configure(state="normal")
         
@@ -94,13 +139,13 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.log(f"Found {len(results)} results for '{keyword}'.")
 
     def on_download_selected(self):
-        selection = self.result_var.get()
-        if not selection:
+        selected_item = self.tree.selection()
+        if not selected_item:
+            self.status_label.configure(text="Please select a torrent from the table.", text_color="yellow")
             return
             
         try:
-            idx_str = selection.split("]")[0].strip("[")
-            idx = int(idx_str) - 1
+            idx = int(selected_item[0])
             torrent_info = self.current_results[idx]
         except (IndexError, ValueError):
             self.log("Error extracting selected torrent.")

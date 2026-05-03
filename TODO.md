@@ -2,7 +2,7 @@
 - choose film, search torrent, download torrent
 - build UI, add more torrent web:
   - https://nyaa.si/
-- show the result as table
+- show the result as table [DONE]
 - create web to show the torrent which protected by cloudflare like this: -> support download for them
   - https://yts.bz/
   - https://1337x.to
