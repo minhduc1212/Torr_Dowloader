@@ -5,10 +5,12 @@ from bs4 import BeautifulSoup
 class TorrentAPI:
     @staticmethod
     def search_movie(keyword):
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        url = f"https://apibay.org/q.php?q={keyword}&cat="
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        url = f"https://apibay.org/q.php?q={urllib.parse.quote(keyword)}&cat="
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 if data and data[0].get('id') != '0':
@@ -19,27 +21,42 @@ class TorrentAPI:
 
     @staticmethod
     def search_nyaa(keyword):
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        url = f"https://nyaa.si/?f=0&c=1_0&q={urllib.parse.quote(keyword)}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        # Construct the exact URL as requested
+        url = f"https://nyaa.si/?f=0&c=1_0&q={urllib.parse.quote_plus(keyword)}"
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                tbody = soup.select_one('div.table-responsive tbody')
+                # Nyaa table uses class 'torrent-list'
+                rows = soup.select('table.torrent-list tbody tr')
                 results = []
-                if tbody:
-                    for row in tbody.find_all('tr'):
-                        title_tag = row.select_one('td[colspan="2"] a:not(.comments)')
-                        title = title_tag.get('title') if title_tag else "Unknown"
-                        
-                        magnet_tag = row.select_one('a[href^="magnet:"]')
-                        magnet_link = magnet_tag.get('href') if magnet_tag else ""
-                        
-                        if magnet_link:
-                            results.append({
-                                "name": title,
-                                "magnet": magnet_link
-                            })
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) < 8:
+                        continue
+                    
+                    # Title link is the last 'a' tag in the second column (it avoids comment links)
+                    title_links = cols[1].select('a:not(.comments)')
+                    if not title_links:
+                        continue
+                    title_tag = title_links[-1]
+                    title = title_tag.get('title') or title_tag.text.strip() or "Unknown"
+                    
+                    # Magnet link is in the third column
+                    magnet_tag = cols[2].select_one('a[href^="magnet:"]')
+                    magnet_link = magnet_tag.get('href') if magnet_tag else ""
+                    
+                    if magnet_link:
+                        results.append({
+                            "name": title,
+                            "magnet": magnet_link,
+                            "size": cols[3].text.strip(),
+                            "seeders": cols[5].text.strip(),
+                            "leechers": cols[6].text.strip()
+                        })
                 return results
         except Exception:
             pass

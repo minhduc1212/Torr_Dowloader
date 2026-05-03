@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from tkinter import ttk
+import threading
 from src.torrent_api import TorrentAPI
 from src.file_manager import FileManager
 from src.download_manager import DownloadManager
@@ -106,11 +107,23 @@ class SafeMovieDownloaderApp(ctk.CTk):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        if source == "The Pirate Bay":
-            results = TorrentAPI.search_movie(keyword)
-        else:
-            results = TorrentAPI.search_nyaa(keyword)
+        # Start search in a separate thread
+        threading.Thread(target=self._perform_search, args=(keyword, source), daemon=True).start()
+
+    def _perform_search(self, keyword, source):
+        try:
+            if source == "The Pirate Bay":
+                results = TorrentAPI.search_movie(keyword)
+            else:
+                results = TorrentAPI.search_nyaa(keyword)
+        except Exception as e:
+            results = None
+            self.log(f"Search error: {str(e)}")
             
+        # Update UI in the main thread
+        self.after(0, self._update_search_results, results, keyword)
+
+    def _update_search_results(self, results, keyword):
         if not results:
             self.status_label.configure(text="Movie not found.", text_color="red")
             self.search_button.configure(state="normal")
@@ -125,8 +138,12 @@ class SafeMovieDownloaderApp(ctk.CTk):
             size = res.get('size', 'N/A')
             if size != 'N/A':
                 try:
-                    size_gb = float(size) / (1024**3)
-                    size = f"{size_gb:.2f} GB"
+                    # Check if size is already a string with units (like from Nyaa)
+                    if isinstance(size, str) and any(unit in size for unit in ['GiB', 'MiB', 'KiB', 'GB', 'MB', 'KB']):
+                        pass 
+                    else:
+                        size_gb = float(size) / (1024**3)
+                        size = f"{size_gb:.2f} GB"
                 except:
                     pass
             

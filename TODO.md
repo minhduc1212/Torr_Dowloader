@@ -3,6 +3,9 @@
 - build UI, add more torrent web:
   - https://nyaa.si/
 - show the result as table [DONE]
+- use cloudflare to get the url but when download have to turnoff
+- add cancel the download, stop seeder
+- page in nyaa and the piratebay
 - create web to show the torrent which protected by cloudflare like this: -> support download for them
   - https://yts.bz/
   - https://1337x.to
