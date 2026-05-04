@@ -12,6 +12,7 @@ class DownloadManager:
         self.aria_process = None
         self.aria2 = None
         self.is_downloading = False
+        self.current_download = None
 
     def start_aria2(self):
         if not self.aria_process:
@@ -28,25 +29,89 @@ class DownloadManager:
             self.aria_process = None
         self.is_downloading = False
 
+    def pause_download(self):
+        if self.current_download:
+            try:
+                self.current_download.pause()
+                return True
+            except Exception:
+                return False
+        return False
+
+    def resume_download(self):
+        if self.current_download:
+            try:
+                self.current_download.resume()
+                return True
+            except Exception:
+                return False
+        return False
+
+    def cancel_download(self):
+        self.is_downloading = False
+        if self.current_download:
+            try:
+                self.current_download.remove(force=True, files=True)
+                self.current_download = None
+                return True
+            except Exception:
+                return False
+        return False
+
+    def stop_seeding(self):
+        if self.current_download:
+            try:
+                self.current_download.remove(force=True, files=False)
+                self.current_download = None
+                return True
+            except Exception:
+                return False
+        return False
+
     def download(self, magnet_link, progress_callback, complete_callback):
         self.is_downloading = True
         try:
             self.start_aria2()
-            download_obj = self.aria2.add_magnet(magnet_link, options={'dir': self.download_dir})
+            self.current_download = self.aria2.add_magnet(magnet_link, options={'dir': self.download_dir})
+
             while self.is_downloading:
                 time.sleep(1)
-                download_obj.update()
-                if download_obj.followed_by_ids:
-                    download_obj = self.aria2.get_download(download_obj.followed_by_ids[0])
-                    continue
-                if download_obj.is_complete:
-                    complete_callback(download_obj.dir)
+                if not self.current_download:
                     break
-                progress_callback(download_obj.progress_string(), download_obj.download_speed_string())
+
+                self.current_download.update()
+
+                if self.current_download.followed_by_ids:
+                    self.current_download = self.aria2.get_download(self.current_download.followed_by_ids[0])
+                    continue
+
+                status = self.current_download.status
+                progress = self.current_download.progress
+                num_seeders = getattr(self.current_download, 'num_seeders', 0)
+                connections = getattr(self.current_download, 'connections', 0)
+                stats = f"S:{num_seeders} C:{connections}"
+
+                # Detect seeding: progress is 100 but status is still active (not complete)
+                if progress >= 100 and status == "active" and self.current_download.is_torrent:
+                    progress_callback("Seeding", stats)
+                    continue
+
+                if self.current_download.is_complete:
+                    complete_callback(self.current_download.dir)
+                    break
+
+                if status == "paused":
+                    progress_callback("Paused", stats)
+                else:
+                    speed = self.current_download.download_speed_string()
+                    progress_callback(self.current_download.progress_string(), f"{speed} | {stats}")
+
         except Exception as e:
-            progress_callback(f"Error: {str(e)}", "0 KB/s")
+            if self.is_downloading:
+                progress_callback(f"Error: {str(e)}", "0 KB/s")
         finally:
             self.is_downloading = False
+            self.current_download = None
 
     def download_async(self, magnet_link, progress_callback, complete_callback):
         thread = threading.Thread(

@@ -4,7 +4,9 @@
   - https://nyaa.si/
 - show the result as table [DONE]
 - use cloudflare to get the url but when download have to turnoff
-- add cancel the download, stop seeder
+- add cancel the download, stop seeder [DONE]
+- add pause [DONE]
+- add filter
 - page in nyaa and the piratebay
 - create web to show the torrent which protected by cloudflare like this: -> support download for them
   - https://yts.bz/

@@ -52,8 +52,20 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.tree.configure(yscrollcommand=self.scrollbar.set)
         self.scrollbar.pack(side="right", fill="y", pady=10, padx=(0, 10))
 
-        self.download_button = ctk.CTkButton(self, text="Download Selected", command=self.on_download_selected, state="disabled")
-        self.download_button.pack(pady=10)
+        self.controls_frame = ctk.CTkFrame(self)
+        self.controls_frame.pack(pady=10)
+
+        self.download_button = ctk.CTkButton(self.controls_frame, text="Download Selected", command=self.on_download_selected, state="disabled")
+        self.download_button.pack(side="left", padx=5)
+
+        self.pause_button = ctk.CTkButton(self.controls_frame, text="Pause", command=self.on_pause_resume, state="disabled")
+        self.pause_button.pack(side="left", padx=5)
+
+        self.cancel_button = ctk.CTkButton(self.controls_frame, text="Cancel", command=self.on_cancel, state="disabled")
+        self.cancel_button.pack(side="left", padx=5)
+
+        self.stop_seeder_button = ctk.CTkButton(self.controls_frame, text="Stop Seeder", command=self.on_stop_seeder, state="disabled")
+        self.stop_seeder_button.pack(side="left", padx=5)
 
         self.status_label = ctk.CTkLabel(self, text="Ready", text_color="gray")
         self.status_label.pack(pady=5)
@@ -171,6 +183,8 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.log(f"Selected: {torrent_info['name']}")
         self.download_button.configure(state="disabled")
         self.search_button.configure(state="disabled")
+        self.pause_button.configure(state="normal", text="Pause")
+        self.cancel_button.configure(state="normal")
         
         if "magnet" in torrent_info:
             magnet_link = torrent_info["magnet"]
@@ -187,17 +201,64 @@ class SafeMovieDownloaderApp(ctk.CTk):
             complete_callback=self.on_download_complete
         )
 
+    def on_pause_resume(self):
+        if self.pause_button.cget("text") == "Pause":
+            if self.download_manager.pause_download():
+                self.pause_button.configure(text="Resume")
+                self.log("Download paused.")
+        else:
+            if self.download_manager.resume_download():
+                self.pause_button.configure(text="Pause")
+                self.log("Download resumed.")
+
+    def on_cancel(self):
+        if self.download_manager.cancel_download():
+            self.log("Download cancelled.")
+            self.status_label.configure(text="Download cancelled.", text_color="yellow")
+            self._reset_ui_after_download()
+
+    def on_stop_seeder(self):
+        # We need the download dir for cleanup
+        download_dir = None
+        if self.download_manager.current_download:
+            download_dir = self.download_manager.current_download.dir
+            
+        if self.download_manager.stop_seeding():
+            self.log("Seeding stopped.")
+            if download_dir:
+                 self.on_download_complete(download_dir)
+            else:
+                 self._reset_ui_after_download()
+
+    def _reset_ui_after_download(self):
+        self.progress_bar.stop()
+        self.progress_bar.set(0)
+        self.pause_button.configure(state="disabled", text="Pause")
+        self.cancel_button.configure(state="disabled")
+        self.stop_seeder_button.configure(state="disabled")
+        self.search_button.configure(state="normal")
+        self.download_button.configure(state="normal")
+
     def update_progress(self, progress_str, speed_str):
         # Safely pass callback data back to main thread
         self.after(0, self._update_progress_ui, progress_str, speed_str)
 
     def _update_progress_ui(self, progress_str, speed_str):
-        self.status_label.configure(text=f"Progress: {progress_str} | Speed: {speed_str}", text_color="cyan")
-        try:
-            self.progress_bar.stop()
-            self.progress_bar.set(float(progress_str.strip('%')) / 100.0)
-        except ValueError:
-            pass
+        if progress_str == "Paused":
+            self.status_label.configure(text=f"Download Paused | {speed_str}", text_color="yellow")
+        elif progress_str == "Seeding":
+            self.status_label.configure(text=f"Seeding... | {speed_str}", text_color="green")
+            self.pause_button.configure(state="disabled")
+            self.cancel_button.configure(state="disabled")
+            self.stop_seeder_button.configure(state="normal")
+            self.progress_bar.set(1.0)
+        else:
+            self.status_label.configure(text=f"Progress: {progress_str} | Speed: {speed_str}", text_color="cyan")
+            try:
+                self.progress_bar.stop()
+                self.progress_bar.set(float(progress_str.strip('%')) / 100.0)
+            except ValueError:
+                pass
 
     def on_download_complete(self, download_dir):
         # Safely pass callback data back to main thread
@@ -212,8 +273,7 @@ class SafeMovieDownloaderApp(ctk.CTk):
         FileManager.clean_up_torrent_folder(download_dir, log_callback=self.log)
         
         self.status_label.configure(text="Enjoy your safe movie watching!", text_color="green")
-        self.search_button.configure(state="normal")
-        self.download_button.configure(state="normal")
+        self._reset_ui_after_download()
 
     def destroy(self):
         # Make sure aria2 terminates cleanly when window closes
