@@ -13,6 +13,8 @@ class SafeMovieDownloaderApp(ctk.CTk):
 
         self.download_manager = DownloadManager("./Filtered_Movies")
         self.current_results = []
+        self.current_page = 1
+        self.current_keyword = ""
 
         # UI Elements Configuration
         self.label = ctk.CTkLabel(self, text="Safe Movie Downloader Tool", font=ctk.CTkFont(size=22, weight="bold"))
@@ -51,6 +53,19 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.scrollbar = ttk.Scrollbar(self.results_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=self.scrollbar.set)
         self.scrollbar.pack(side="right", fill="y", pady=10, padx=(0, 10))
+
+        # Pagination Controls
+        self.pagination_frame = ctk.CTkFrame(self)
+        self.pagination_frame.pack(pady=5)
+
+        self.prev_button = ctk.CTkButton(self.pagination_frame, text="< Previous", command=self.on_prev_page, width=100, state="disabled")
+        self.prev_button.pack(side="left", padx=10)
+
+        self.page_label = ctk.CTkLabel(self.pagination_frame, text="Page: 1", font=ctk.CTkFont(size=14))
+        self.page_label.pack(side="left", padx=10)
+
+        self.next_button = ctk.CTkButton(self.pagination_frame, text="Next >", command=self.on_next_page, width=100, state="disabled")
+        self.next_button.pack(side="left", padx=10)
 
         self.controls_frame = ctk.CTkFrame(self)
         self.controls_frame.pack(pady=10)
@@ -109,25 +124,44 @@ class SafeMovieDownloaderApp(ctk.CTk):
             self.status_label.configure(text="Please enter a movie name.", text_color="red")
             return
 
+        self.current_page = 1
+        self.current_keyword = keyword
+        self._execute_search()
+
+    def on_next_page(self):
+        self.current_page += 1
+        self._execute_search()
+
+    def on_prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self._execute_search()
+
+    def _execute_search(self):
+        keyword = self.current_keyword
         source = self.source_var.get()
-        self.status_label.configure(text=f"Searching for '{keyword}' on {source}...", text_color="white")
+        self.status_label.configure(text=f"Searching for '{keyword}' (Page {self.current_page}) on {source}...", text_color="white")
         self.search_button.configure(state="disabled")
         self.download_button.configure(state="disabled")
-        self.log(f"\n--- Searching for: {keyword} on {source} ---")
+        self.next_button.configure(state="disabled")
+        self.prev_button.configure(state="disabled")
+        self.log(f"\n--- Searching for: {keyword} (Page {self.current_page}) on {source} ---")
 
         # Clear existing results
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         # Start search in a separate thread
-        threading.Thread(target=self._perform_search, args=(keyword, source), daemon=True).start()
+        threading.Thread(target=self._perform_search, args=(keyword, source, self.current_page), daemon=True).start()
 
-    def _perform_search(self, keyword, source):
+    def _perform_search(self, keyword, source, page):
         try:
             if source == "The Pirate Bay":
+                # Pirate Bay doesn't use page in this simple implementation, or it uses it differently
+                # For now, we only support page for Nyaa.si as requested
                 results = TorrentAPI.search_movie(keyword)
             else:
-                results = TorrentAPI.search_nyaa(keyword)
+                results = TorrentAPI.search_nyaa(keyword, page)
         except Exception as e:
             results = None
             self.log(f"Search error: {str(e)}")
@@ -136,14 +170,20 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.after(0, self._update_search_results, results, keyword)
 
     def _update_search_results(self, results, keyword):
+        source = self.source_var.get()
         if not results:
-            self.status_label.configure(text="Movie not found.", text_color="red")
+            self.status_label.configure(text=f"No results found on page {self.current_page}.", text_color="red")
             self.search_button.configure(state="normal")
+            if self.current_page > 1:
+                self.prev_button.configure(state="normal")
+            self.next_button.configure(state="disabled")
             return
 
         self.current_results = results
+        self.page_label.configure(text=f"Page: {self.current_page}")
         
         for idx, res in enumerate(results):
+            # ... existing result processing ...
             name = res.get('name', 'Unknown')
             seeders = res.get('seeders', 'N/A')
             leechers = res.get('leechers', 'N/A')
@@ -164,8 +204,16 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.download_button.configure(state="normal")
         self.search_button.configure(state="normal")
         
+        # Enable/Disable pagination buttons
+        if source == "Nyaa.si":
+            self.prev_button.configure(state="normal" if self.current_page > 1 else "disabled")
+            self.next_button.configure(state="normal") # Assume there might be a next page unless it's empty
+        else:
+            self.prev_button.configure(state="disabled")
+            self.next_button.configure(state="disabled")
+        
         self.status_label.configure(text=f"Found {len(results)} results. Select one and click Download.", text_color="white")
-        self.log(f"Found {len(results)} results for '{keyword}'.")
+        self.log(f"Found {len(results)} results for '{keyword}' on page {self.current_page}.")
 
     def on_download_selected(self):
         selected_item = self.tree.selection()

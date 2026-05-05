@@ -20,18 +20,21 @@ class TorrentAPI:
         return None
 
     @staticmethod
-    def search_nyaa(keyword):
+    def search_nyaa(keyword, page=1):
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
-        # Construct the exact URL as requested
-        url = f"https://nyaa.si/?f=0&c=1_0&q={urllib.parse.quote_plus(keyword)}"
+        # Construct the exact URL as requested, adding the page parameter
+        url = f"https://nyaa.si/?f=0&c=1_0&q={urllib.parse.quote_plus(keyword)}&p={page}"
         try:
             response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 # Nyaa table uses class 'torrent-list'
                 rows = soup.select('table.torrent-list tbody tr')
+                if not rows:
+                    return None
+                
                 results = []
                 for row in rows:
                     cols = row.find_all('td')
