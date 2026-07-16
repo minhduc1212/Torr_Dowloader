@@ -24,7 +24,7 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.search_frame.pack(pady=10, padx=20, fill="x")
 
         self.source_var = ctk.StringVar(value="The Pirate Bay")
-        self.source_dropdown = ctk.CTkOptionMenu(self.search_frame, variable=self.source_var, values=["The Pirate Bay", "Nyaa.si"], width=140, height=35)
+        self.source_dropdown = ctk.CTkOptionMenu(self.search_frame, variable=self.source_var, values=["The Pirate Bay", "YTS", "EZTV", "1337x", "Nyaa.si"], width=140, height=35)
         self.source_dropdown.pack(side="left", padx=(10, 0), pady=10)
 
         self.search_entry = ctk.CTkEntry(self.search_frame, placeholder_text="Enter movie name to search...", height=35)
@@ -157,9 +157,13 @@ class SafeMovieDownloaderApp(ctk.CTk):
     def _perform_search(self, keyword, source, page):
         try:
             if source == "The Pirate Bay":
-                # Pirate Bay doesn't use page in this simple implementation, or it uses it differently
-                # For now, we only support page for Nyaa.si as requested
                 results = TorrentAPI.search_movie(keyword)
+            elif source == "YTS":
+                results = TorrentAPI.search_yts(keyword, page)
+            elif source == "EZTV":
+                results = TorrentAPI.search_eztv(keyword, page)
+            elif source == "1337x":
+                results = TorrentAPI.search_1337x(keyword, page)
             else:
                 results = TorrentAPI.search_nyaa(keyword, page)
         except Exception as e:
@@ -205,7 +209,7 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.search_button.configure(state="normal")
         
         # Enable/Disable pagination buttons
-        if source == "Nyaa.si":
+        if source in ["Nyaa.si", "YTS", "EZTV", "1337x"]:
             self.prev_button.configure(state="normal" if self.current_page > 1 else "disabled")
             self.next_button.configure(state="normal") # Assume there might be a next page unless it's empty
         else:
@@ -234,11 +238,28 @@ class SafeMovieDownloaderApp(ctk.CTk):
         self.pause_button.configure(state="normal", text="Pause")
         self.cancel_button.configure(state="normal")
         
-        if "magnet" in torrent_info:
-            magnet_link = torrent_info["magnet"]
+        if not torrent_info.get("magnet") and torrent_info.get("link"):
+            self.status_label.configure(text="Fetching magnet link from details page...", text_color="yellow")
+            def fetch_and_start():
+                try:
+                    magnet_link = TorrentAPI.get_magnet_1337x(torrent_info["link"])
+                    if magnet_link:
+                        torrent_info["magnet"] = magnet_link
+                        self.after(0, lambda: self._start_download_flow(magnet_link))
+                    else:
+                        raise Exception("No magnet link found in the details page.")
+                except Exception as e:
+                    self.after(0, lambda: self.status_label.configure(text=f"Error: {str(e)}", text_color="red"))
+                    self.after(0, self._reset_ui_after_download)
+            threading.Thread(target=fetch_and_start, daemon=True).start()
         else:
-            magnet_link = TorrentAPI.generate_magnet_link(torrent_info["info_hash"], torrent_info["name"])
-        
+            if "magnet" in torrent_info:
+                magnet_link = torrent_info["magnet"]
+            else:
+                magnet_link = TorrentAPI.generate_magnet_link(torrent_info["info_hash"], torrent_info["name"])
+            self._start_download_flow(magnet_link)
+
+    def _start_download_flow(self, magnet_link):
         self.status_label.configure(text="Starting download...", text_color="green")
         self.progress_bar.set(0)
         self.progress_bar.start()
